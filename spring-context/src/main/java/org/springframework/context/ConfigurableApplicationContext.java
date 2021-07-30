@@ -154,6 +154,9 @@ public interface ConfigurableApplicationContext extends ApplicationContext, Life
 	 * <p>As this is a startup method, it should destroy already created singletons
 	 * if it fails, to avoid dangling resources. In other words, after invocation
 	 * of this method, either all or no singletons at all should be instantiated.
+	 * 加载或刷新配置的持久表示，它可能来自基于 Java 的配置、XML 文件、属性文件、关系数据库模式或某种其他格式。
+	 * 由于这是一个启动方法，如果失败，它应该销毁已经创建的单例，以避免悬空资源。
+	 * 换句话说，在调用这个方法之后，要么全部实例化，要么根本不实例化。
 	 * @throws BeansException if the bean factory could not be initialized
 	 * @throws IllegalStateException if already initialized and multiple refresh
 	 * attempts are not supported
