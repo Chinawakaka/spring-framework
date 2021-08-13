@@ -174,6 +174,8 @@ public class GenericApplicationContext extends AbstractApplicationContext implem
 	 * try to resolve them.
 	 * <p>Default is "true". Turn this off to throw an exception when encountering
 	 * a circular reference, disallowing them completely.
+	 * 设置是否允许 bean 之间的循环引用 - 并自动尝试解决它们。
+	 * 默认为“真”。关闭此选项以在遇到循环引用时抛出异常，完全禁止它们。
 	 * @since 3.0
 	 * @see org.springframework.beans.factory.support.DefaultListableBeanFactory#setAllowCircularReferences
 	 */

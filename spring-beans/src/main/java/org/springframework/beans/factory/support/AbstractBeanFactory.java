@@ -226,6 +226,7 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 
 	/**
 	 * Return an instance, which may be shared or independent, of the specified bean.
+	 * 返回指定 bean 的一个实例，该实例可以是共享的，也可以是独立的。
 	 * @param name the name of the bean to retrieve
 	 * @param requiredType the required type of the bean to retrieve
 	 * @param args arguments to use when creating a bean instance using explicit arguments
@@ -239,11 +240,19 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 	protected <T> T doGetBean(
 			String name, @Nullable Class<T> requiredType, @Nullable Object[] args, boolean typeCheckOnly)
 			throws BeansException {
-
+		//对beanName做一个校验特殊字符串的功能
 		String beanName = transformedBeanName(name);
+		////定义了一个对象，用来存将来返回出来的bean
 		Object bean;
 
 		// Eagerly check singleton cache for manually registered singletons.
+		//注意这是第一次调用getSingleton方法，下面spring还会调用一次
+		//但是两次调用的不是同一个方法；属于方法重载
+		//第一次 getSingleton(beanName) 也是循环依赖最重要的方法
+		//首先spring会去单例池去根据名字获取这个bean,单例池就是一个map,如果对象被创建了则直接从map中拿出来并且返回
+		//如果被引用的这个类如果没有创建，则会调用createBean来创建这个bean,在创建这个被引用的bean的过程中会去判断这个bean的对象有没有被实例化
+		//注意，这里的bean的对象，bean和对象有区别。对象：只要类被实例化就可以称之为对象
+		//bean：首先得是一个对象，然后这个对象需要经历一系列的的bean生命周期，最后把这个对象put到单例池才能算一个bean
 		Object sharedInstance = getSingleton(beanName);
 		if (sharedInstance != null && args == null) {
 			if (logger.isTraceEnabled()) {
@@ -1132,6 +1141,7 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 	/**
 	 * Return the bean name, stripping out the factory dereference prefix if necessary,
 	 * and resolving aliases to canonical names.
+	 * 返回 bean 名称，必要时去除工厂取消引用前缀，并将别名解析为规范名称。
 	 * @param name the user-specified name
 	 * @return the transformed bean name
 	 */

@@ -85,6 +85,8 @@ public class AnnotationConfigApplicationContext extends GenericApplicationContex
 	 */
 	public AnnotationConfigApplicationContext(Class<?>... componentClasses) {
 		this();
+		//修改源码关闭循环依赖AnnotationConfigApplicationContext继承的GenericApplicationContext的setAllowCircularReferences
+		setAllowCircularReferences(false);
 		register(componentClasses);
 		refresh();
 	}
