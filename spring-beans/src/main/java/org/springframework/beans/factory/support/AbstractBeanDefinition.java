@@ -554,6 +554,7 @@ public abstract class AbstractBeanDefinition extends BeanMetadataAttributeAccess
 
 	/**
 	 * Return the resolved autowire code,
+	 * 返回解析的自动装配代码，
 	 * (resolving AUTOWIRE_AUTODETECT to AUTOWIRE_CONSTRUCTOR or AUTOWIRE_BY_TYPE).
 	 * @see #AUTOWIRE_AUTODETECT
 	 * @see #AUTOWIRE_CONSTRUCTOR
@@ -564,6 +565,8 @@ public abstract class AbstractBeanDefinition extends BeanMetadataAttributeAccess
 			// Work out whether to apply setter autowiring or constructor autowiring.
 			// If it has a no-arg constructor it's deemed to be setter autowiring,
 			// otherwise we'll try constructor autowiring.
+			//确定是应用 setter 自动装配还是构造器自动装配。如果它有一个无参数构造函数，
+			// 它被认为是 setter 自动装配，否则我们将尝试构造函数自动装配。
 			Constructor<?>[] constructors = getBeanClass().getConstructors();
 			for (Constructor<?> constructor : constructors) {
 				if (constructor.getParameterCount() == 0) {
@@ -1083,6 +1086,7 @@ public abstract class AbstractBeanDefinition extends BeanMetadataAttributeAccess
 	 */
 	public void prepareMethodOverrides() throws BeanDefinitionValidationException {
 		// Check that lookup methods exist and determine their overloaded status.
+		//检查查找方法是否存在并确定它们的重载状态。
 		if (hasMethodOverrides()) {
 			getMethodOverrides().getOverrides().forEach(this::prepareMethodOverride);
 		}
@@ -1096,14 +1100,22 @@ public abstract class AbstractBeanDefinition extends BeanMetadataAttributeAccess
 	 * @throws BeanDefinitionValidationException in case of validation failure
 	 */
 	protected void prepareMethodOverride(MethodOverride mo) throws BeanDefinitionValidationException {
+		// 获取指定类中指定方法名的个数
 		int count = ClassUtils.getMethodCountForName(getBeanClass(), mo.getMethodName());
 		if (count == 0) {
+			// 无效
 			throw new BeanDefinitionValidationException(
 					"Invalid method override: no method with name '" + mo.getMethodName() +
 					"' on class [" + getBeanClassName() + "]");
 		}
 		else if (count == 1) {
 			// Mark override as not overloaded, to avoid the overhead of arg type checking.
+			/*
+			 * 标记MethodOverride暂未被覆盖，避免参数类型检查的开销
+			 *
+			 * 如果一个方法存在多个重载，那么在调用及增强的时候还需要根据参数类型进行匹配来最终确认调用的函数
+			 * 如果方法只有一个，就在这里设置重载为false，后续可以直接定位方法
+			 */
 			mo.setOverloaded(false);
 		}
 	}

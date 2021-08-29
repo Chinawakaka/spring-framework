@@ -208,12 +208,14 @@ public class SimpleAliasRegistry implements AliasRegistry {
 
 	/**
 	 * Determine the raw name, resolving aliases to canonical names.
+	 * 确定原始名称，将别名解析为规范名称。
 	 * @param name the user-specified name
 	 * @return the transformed name
 	 */
 	public String canonicalName(String name) {
 		String canonicalName = name;
 		// Handle aliasing...
+		// 遍历寻找真正的name，因为可能存在引用链
 		String resolvedName;
 		do {
 			resolvedName = this.aliasMap.get(canonicalName);
@@ -222,6 +224,8 @@ public class SimpleAliasRegistry implements AliasRegistry {
 			}
 		}
 		while (resolvedName != null);
+		//为什么这里当 resolvedName != null 的时候需要继续循环呢，这是因为一个别名所引用的不一定是一个最终的 beanName，
+		// 可以是另外一个别名，这个时候就是一个链式引用的场景，我们需要继续沿着引用链往下寻找最终的 beanName。
 		return canonicalName;
 	}
 

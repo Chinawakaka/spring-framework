@@ -7,7 +7,7 @@ import org.springframework.stereotype.Service;
  * @Description
  * @Date 2021/7/24
  **/
-@Service
+//@Service
 public class UserServiceImpl {
 	public void sayHi(){
 		System.out.println("Hello Spring！111111111111");

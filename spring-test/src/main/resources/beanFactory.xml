@@ -5,8 +5,20 @@
            http://www.springframework.org/schema/beans/spring-beans-2.5.xsd">
 
 
-	<bean id="student" class="com.ljh.test.pojo.Student">
-		<property name="name" value="xiaoMing"></property>
-		<property name="age" value="23"></property>
+<!--	<bean id="student" class="com.ljh.test.pojo.Student">-->
+<!--		<property name="name" value="xiaoMing"></property>-->
+<!--		<property name="age" value="23"></property>-->
+<!--	</bean>-->
+
+
+	<bean id="person" class="com.ljh.test.pojo.Person">
+		<property name="name" value="小明"/>
+		<property name="address" value="良品大厦"/>
+		<property name="phone" value="123456789"/>
 	</bean>
+
+	<bean id="myBeanPostProcessor" class="com.ljh.test.pojo.MyBeanPostProcessor"/>
+	<bean id="myBeanFactoryPostProcessor" class="com.ljh.test.pojo.MyBeanFactoryPostProcessor"/>
+	<bean id="myInstantiationAwareBeanPostProcessor" class="com.ljh.test.pojo.MyInstantiationAwareBeanPostProcessor"/>
+
 </beans>

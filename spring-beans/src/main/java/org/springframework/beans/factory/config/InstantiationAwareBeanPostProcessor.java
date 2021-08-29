@@ -46,6 +46,8 @@ import org.springframework.lang.Nullable;
  */
 public interface InstantiationAwareBeanPostProcessor extends BeanPostProcessor {
 
+	//如果我们希望在实例化前后对 bean 的定义实施一些修改，可以实现该接口并注册到 BeanFactory 中，
+	// 不过需要注意一点的是处理器会对所有的 bean 生效，而筛选的逻辑需要我们自己实现。
 	/**
 	 * Apply this BeanPostProcessor <i>before the target bean gets instantiated</i>.
 	 * The returned bean object may be a proxy to use instead of the target bean,
@@ -69,6 +71,7 @@ public interface InstantiationAwareBeanPostProcessor extends BeanPostProcessor {
 	 * @see #postProcessAfterInstantiation
 	 * @see org.springframework.beans.factory.support.AbstractBeanDefinition#getBeanClass()
 	 * @see org.springframework.beans.factory.support.AbstractBeanDefinition#getFactoryMethodName()
+	 * bean实例化前调用，是对bean定义进行修改的最后机会
 	 */
 	@Nullable
 	default Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName) throws BeansException {
@@ -89,6 +92,7 @@ public interface InstantiationAwareBeanPostProcessor extends BeanPostProcessor {
 	 * instances being invoked on this bean instance.
 	 * @throws org.springframework.beans.BeansException in case of errors
 	 * @see #postProcessBeforeInstantiation
+	 * bean实例化后立即调用，位于属性注入之前
 	 */
 	default boolean postProcessAfterInstantiation(Object bean, String beanName) throws BeansException {
 		return true;
@@ -111,6 +115,7 @@ public interface InstantiationAwareBeanPostProcessor extends BeanPostProcessor {
 	 * @throws org.springframework.beans.BeansException in case of errors
 	 * @since 5.1
 	 * @see #postProcessPropertyValues
+	 * 在将属性注入bean实例前的属性处理
 	 */
 	@Nullable
 	default PropertyValues postProcessProperties(PropertyValues pvs, Object bean, String beanName)

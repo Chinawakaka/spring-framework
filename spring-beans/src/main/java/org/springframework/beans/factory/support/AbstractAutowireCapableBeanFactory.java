@@ -422,8 +422,9 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 	@Override
 	public Object applyBeanPostProcessorsAfterInitialization(Object existingBean, String beanName)
 			throws BeansException {
-
+		// 实例化后置处理器
 		Object result = existingBean;
+		// 依次采用后置处理器处理
 		for (BeanPostProcessor processor : getBeanPostProcessors()) {
 			Object current = processor.postProcessAfterInitialization(result, beanName);
 			if (current == null) {
@@ -469,6 +470,8 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 	/**
 	 * Central method of this class: creates a bean instance,
 	 * populates the bean instance, applies post-processors, etc.
+	 * 此类的中心方法：创建 bean 实例、填充 bean 实例、应用后处理器等。
+	 * 虽然叫 createBean，但仍然不是真正创建 bean 实例的地方，该方法主要还是在做一些前期准备工作
 	 * @see #doCreateBean
 	 */
 	@Override
@@ -483,6 +486,7 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 		// Make sure bean class is actually resolved at this point, and
 		// clone the bean definition in case of a dynamically resolved Class
 		// which cannot be stored in the shared merged bean definition.
+		// 1.根据设置的class属性或className来解析得到Class引用
 		Class<?> resolvedClass = resolveBeanClass(mbd, beanName);
 		if (resolvedClass != null && !mbd.hasBeanClass() && mbd.getBeanClassName() != null) {
 			mbdToUse = new RootBeanDefinition(mbd);
@@ -490,6 +494,7 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 		}
 
 		// Prepare method overrides.
+		// 2.对override属性进行标记和验证，本质上是处理lookup-method和replaced-method标签
 		try {
 			mbdToUse.prepareMethodOverrides();
 		}
@@ -498,10 +503,16 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 					beanName, "Validation of method overrides failed", ex);
 		}
 
+		// 3. 处理 InstantiationAwareBeanPostProcessor
 		try {
 			// Give BeanPostProcessors a chance to return a proxy instead of the target bean instance.
+			//让 BeanPostProcessors 有机会返回一个代理而不是目标 bean 实例。
+			//这里调用了InstantiationAwareBeanPostProcessorAdapter的前置处理器
 			Object bean = resolveBeforeInstantiation(beanName, mbdToUse);
+			//当然这里的后置处理不是必然调用，而是建立在前置处理实例化了 bean 的前提下，因为真正常规实例化 bean 的过程将在接下来一步进行发生，
+			// 不过如果这一步已经完成了 bean 的实例化过程，那么也就没有继续执行下去的必要，直接返回即可
 			if (bean != null) {
+				// 如果处理结果不为null，则直接返回，而不执行后续的createBean
 				return bean;
 			}
 		}
@@ -511,6 +522,7 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 		}
 
 		try {
+			// 4. 真正创建bean实例
 			Object beanInstance = doCreateBean(beanName, mbdToUse, args);
 			if (logger.isTraceEnabled()) {
 				logger.trace("Finished creating instance of bean '" + beanName + "'");
@@ -533,6 +545,15 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 	 * at this point, e.g. checking {@code postProcessBeforeInstantiation} callbacks.
 	 * <p>Differentiates between default bean instantiation, use of a
 	 * factory method, and autowiring a constructor.
+	 * 实际创建指定的bean。预创建处理此时已经发生，例如检查 {@code postProcessBeforeInstantiation} 回调。 <p>区分默认 bean 实例化、使用工厂方法和自动装配构造函数。
+	 * 大体流程：
+	 * 1、如果是单例，尝试从缓存中获取 bean 的包装器 BeanWrapper
+	 * 2、如果不存在对应的 Wrapper，则说明 bean 未被实例化，创建 bean 实例
+	 * 3、应用 MergedBeanDefinitionPostProcessor
+	 * 4、检查是否需要提前曝光，避免循环依赖
+	 * 5、初始化 bean 实例
+	 * 6、再次基于依存关系验证是否存在循环依赖
+	 * 7、注册 DisposableBean
 	 * @param beanName the name of the bean
 	 * @param mbd the merged bean definition for the bean
 	 * @param args explicit arguments to use for constructor or factory method invocation
@@ -546,23 +567,40 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 			throws BeanCreationException {
 
 		// Instantiate the bean.
+		// 1. 如果是单例，尝试获取对应的BeanWrapper
+		//单例对象是全局唯一的，一旦创建就常驻内存，如果对应的 bean 已经被实例化过，那么这里获取到的是 BeanWrapper 对象，
+		// BeanWrapper 可以看作是偏底层的 bean 包装器，提供了对标准 java bean 的分析和操作方法，包括获取和设置属性值、获取属性描述符，以及属性的读写特性等
 		BeanWrapper instanceWrapper = null;
 		if (mbd.isSingleton()) {
 			instanceWrapper = this.factoryBeanInstanceCache.remove(beanName);
 		}
+		// 2. bean未实例化，创建 bean 实例
 		if (instanceWrapper == null) {
+			/*
+			 * 说明对应的bean还没有创建，用对应的策略（工厂方法、构造函数）创建bean实例，以及简单初始化,创建对象
+			 *
+			 * 将beanDefinition转成BeanWrapper，大致流程如下：
+			 * 1. 如果存在工厂方法，则使用工厂方法初始化
+			 * 2. 否则，如果存在多个构造函数，则根据参数确定构造函数，并利用构造函数初始化
+			 * 3. 否则，使用默认构造函数初始化
+			 * 实例化对象，第二次调用后置处理起
+			 */
 			instanceWrapper = createBeanInstance(beanName, mbd, args);
 		}
+		// 从BeanWrapper中获取包装的bean实例
 		Object bean = instanceWrapper.getWrappedInstance();
+		// 从BeanWrapper获取包装bean的class引用
 		Class<?> beanType = instanceWrapper.getWrappedClass();
 		if (beanType != NullBean.class) {
 			mbd.resolvedTargetType = beanType;
 		}
 
 		// Allow post-processors to modify the merged bean definition.
+		// 3. 应用 MergedBeanDefinitionPostProcessor
 		synchronized (mbd.postProcessingLock) {
 			if (!mbd.postProcessed) {
 				try {
+					// 处理 merged bean，Autowired通过此方法实现诸如类型的解析  第三次调用后置处理器
 					applyMergedBeanDefinitionPostProcessors(mbd, beanType, beanName);
 				}
 				catch (Throwable ex) {
@@ -575,6 +613,12 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 
 		// Eagerly cache singletons to be able to resolve circular references
 		// even when triggered by lifecycle interfaces like BeanFactoryAware.
+		// 4. 检查是否需要提前曝光，避免循环依赖，条件：单例 && 允许循环依赖 && 当前bean正在创建中
+		// 这段逻辑位于初始化 bean 实例之前，其用意就是当初始化一个 bean 时，如果引用了另外一个 bean，这个时候就需要转而去创建并初始化另外一个 bean，
+		// 如果恰好该 bean 引用了之前的 bean 就出现了循环依赖，假设我们令第一个 bean 为 A，第二个 bean 为 B，
+		// 基于这段代码的逻辑，B 就可以先给自己类型为 A 的属性注入 A 的实例（这个时候 A 还没有被初始化），然后完成初始化，
+		// 此时继续回到初始化 A 的逻辑，因为都是单例，所以当 A 完成了初始化之后，B 所引用的 A 对象也就是一个完成了初始化过程的对象，
+		// 而不是之前的刚刚完成对象创建还没有注入属性的实例。
 		boolean earlySingletonExposure = (mbd.isSingleton() && this.allowCircularReferences &&
 				isSingletonCurrentlyInCreation(beanName));
 		if (earlySingletonExposure) {
@@ -582,13 +626,21 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 				logger.trace("Eagerly caching bean '" + beanName +
 						"' to allow for resolving potential circular references");
 			}
+			// 为避免循环依赖，在完成bean实例化之前，将对应的ObjectFactory加入bean的工厂
+			// getEarlyBeanReference,对bean再一次依赖引用，应用SmartInstantiationAwareBeanPostProcessor
+			//第四次调用后置处理起，判断是否需要aop
 			addSingletonFactory(beanName, () -> getEarlyBeanReference(beanName, mbd, bean));
 		}
 
 		// Initialize the bean instance.
+		// 5. 初始化bean实例
 		Object exposedObject = bean;
 		try {
+			// 对bean进行填充，将各个属性值注入，如果存在依赖的bean则进行递归初始化
+			// 也就是我们常说的自动注入，里面会完成第五第六次后置处理器
 			populateBean(beanName, mbd, instanceWrapper);
+			// 初始化bean，调用初始化方法，比如init-method
+			// 完成第七次和第八次后置处理器的调用
 			exposedObject = initializeBean(beanName, exposedObject, mbd);
 		}
 		catch (Throwable ex) {
@@ -601,20 +653,30 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 			}
 		}
 
+		// 6. 再次基于依存关系验证是否存在循环依赖        存在循环依赖会导致容器中存在残缺的 bean，这对于使用 Spring 框架的系统来说是一个极大的隐患，所以在这里最后再检测一次，确保所有需要实例化的 bean 都完成了对象的创建和初始化过程，否则系统不应该正常启动。
 		if (earlySingletonExposure) {
+			// 提前曝光
 			Object earlySingletonReference = getSingleton(beanName, false);
+			// 只有在检测到循环引用的情况下才会不为null
 			if (earlySingletonReference != null) {
+				// exposedObject没有在初始化中被增强
 				if (exposedObject == bean) {
 					exposedObject = earlySingletonReference;
 				}
 				else if (!this.allowRawInjectionDespiteWrapping && hasDependentBean(beanName)) {
+					// 获取依赖的bean的name
 					String[] dependentBeans = getDependentBeans(beanName);
 					Set<String> actualDependentBeans = new LinkedHashSet<>(dependentBeans.length);
 					for (String dependentBean : dependentBeans) {
+						// 检测依赖，记录未完成创建的bean
 						if (!removeSingletonIfCreatedForTypeCheckOnly(dependentBean)) {
 							actualDependentBeans.add(dependentBean);
 						}
 					}
+					/*
+					 * 因为bean在创建完成之后，其依赖的bean一定是被创建了的
+					 * 如果actualDependentBeans不为空，则说明bean依赖的bean没有完成创建，存在循环依赖
+					 */
 					if (!actualDependentBeans.isEmpty()) {
 						throw new BeanCurrentlyInCreationException(beanName,
 								"Bean with name '" + beanName + "' has been injected into other beans [" +
@@ -629,6 +691,7 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 		}
 
 		// Register bean as disposable.
+		// 7. 注册DisposableBean
 		try {
 			registerDisposableBeanIfNecessary(beanName, bean, mbd);
 		}
@@ -1087,13 +1150,18 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 	@Nullable
 	protected Object resolveBeforeInstantiation(String beanName, RootBeanDefinition mbd) {
 		Object bean = null;
+		// 表示尚未被解析
 		if (!Boolean.FALSE.equals(mbd.beforeInstantiationResolved)) {
 			// Make sure bean class is actually resolved at this point.
+			// mbd是程序创建的且存在后置处理器
 			if (!mbd.isSynthetic() && hasInstantiationAwareBeanPostProcessors()) {
+				// 获取最终的class引用，如果是工厂方法则获取工厂所创建的实例类型
 				Class<?> targetType = determineTargetType(beanName, mbd);
 				if (targetType != null) {
+					// 调用实例化前置处理器
 					bean = applyBeanPostProcessorsBeforeInstantiation(targetType, beanName);
 					if (bean != null) {
+						// 调用实例化后置处理器
 						bean = applyBeanPostProcessorsAfterInitialization(bean, beanName);
 					}
 				}
@@ -1116,8 +1184,10 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 	 */
 	@Nullable
 	protected Object applyBeanPostProcessorsBeforeInstantiation(Class<?> beanClass, String beanName) {
+		// 实例化前置处理器
 		for (BeanPostProcessor bp : getBeanPostProcessors()) {
 			if (bp instanceof InstantiationAwareBeanPostProcessor) {
+				// 逐一调用处理器
 				InstantiationAwareBeanPostProcessor ibp = (InstantiationAwareBeanPostProcessor) bp;
 				Object result = ibp.postProcessBeforeInstantiation(beanClass, beanName);
 				if (result != null) {
@@ -1131,6 +1201,7 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 	/**
 	 * Create a new instance for the specified bean, using an appropriate instantiation strategy:
 	 * factory method, constructor autowiring, or simple instantiation.
+	 * 使用适当的实例化策略为指定的 bean 创建一个新实例：工厂方法、构造函数自动装配或简单实例化
 	 * @param beanName the name of the bean
 	 * @param mbd the bean definition for the bean
 	 * @param args explicit arguments to use for constructor or factory method invocation
@@ -1142,6 +1213,7 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 	 */
 	protected BeanWrapper createBeanInstance(String beanName, RootBeanDefinition mbd, @Nullable Object[] args) {
 		// Make sure bean class is actually resolved at this point.
+		// 解析class引用
 		Class<?> beanClass = resolveBeanClass(mbd, beanName);
 
 		if (beanClass != null && !Modifier.isPublic(beanClass.getModifiers()) && !mbd.isNonPublicAccessAllowed()) {
@@ -1154,34 +1226,43 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 			return obtainFromSupplier(instanceSupplier, beanName);
 		}
 
+		//1. 如果工厂方法不为空，则使用工厂方法进行实例化
 		if (mbd.getFactoryMethodName() != null) {
 			return instantiateUsingFactoryMethod(beanName, mbd, args);
 		}
 
 		// Shortcut when re-creating the same bean...
+		//利用构造函数进行实例化，解析并确定目标构造函数
 		boolean resolved = false;
 		boolean autowireNecessary = false;
 		if (args == null) {
 			synchronized (mbd.constructorArgumentLock) {
+				// 一个类可能有多个构造函数，需要根据参数来确定具体的构造函数
 				if (mbd.resolvedConstructorOrFactoryMethod != null) {
 					resolved = true;
 					autowireNecessary = mbd.constructorArgumentsResolved;
 				}
 			}
 		}
+		// 如果已经解析过，则使用已经确定的构造方法
 		if (resolved) {
 			if (autowireNecessary) {
+				// 依据构造函数注入
 				return autowireConstructor(beanName, mbd, null, null);
 			}
 			else {
+				// 使用默认构造函数构造
 				return instantiateBean(beanName, mbd);
 			}
 		}
+		//经过上面的流程，不管是通过通过工厂方法还是构造方法来实例化对象，到这里得到的也仅仅是一个 bean 的最初实例，还不是我们最终期望的 bean，因为后面还需要对 bean 实例进行初始化处理，注入相应的属性值等
 
 		// Candidate constructors for autowiring?
+		// 需要根据参数决定使用哪个构造函数
 		Constructor<?>[] ctors = determineConstructorsFromBeanPostProcessors(beanClass, beanName);
 		if (ctors != null || mbd.getResolvedAutowireMode() == AUTOWIRE_CONSTRUCTOR ||
 				mbd.hasConstructorArgumentValues() || !ObjectUtils.isEmpty(args)) {
+			// 构造函数自动注入
 			return autowireConstructor(beanName, mbd, ctors, args);
 		}
 
@@ -1192,6 +1273,7 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 		}
 
 		// No special handling: simply use no-arg constructor.
+		//使用默认的构造函数
 		return instantiateBean(beanName, mbd);
 	}
 
@@ -1289,8 +1371,10 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 						getAccessControlContext());
 			}
 			else {
+				// 利用反射进行实例化
 				beanInstance = getInstantiationStrategy().instantiate(mbd, beanName, this);
 			}
+			// 利用包装器包装bean实例
 			BeanWrapper bw = new BeanWrapperImpl(beanInstance);
 			initBeanWrapper(bw);
 			return bw;
@@ -1305,6 +1389,7 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 	 * Instantiate the bean using a named factory method. The method may be static, if the
 	 * mbd parameter specifies a class, rather than a factoryBean, or an instance variable
 	 * on a factory object itself configured using Dependency Injection.
+	 * 使用命名工厂方法实例化 bean。如果 mbd 参数指定一个类，而不是 factoryBean，或者使用依赖注入配置的工厂对象本身的实例变量，则该方法可能是静态的。
 	 * @param beanName the name of the bean
 	 * @param mbd the bean definition for the bean
 	 * @param explicitArgs argument values passed in programmatically via the getBean method,
@@ -1325,6 +1410,8 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 	 * <p>This corresponds to constructor injection: In this mode, a Spring
 	 * bean factory is able to host components that expect constructor-based
 	 * dependency resolution.
+	 * “自动装配构造函数”（按类型带有构造函数参数）行为。如果指定了显式构造函数参数值，也适用，
+	 * 将所有剩余参数与来自 bean 工厂的 bean 匹配。 <p>这对应于构造函数注入：在这种模式下，Spring bean 工厂能够承载期望基于构造函数的依赖项解析的组件。
 	 * @param beanName the name of the bean
 	 * @param mbd the bean definition for the bean
 	 * @param ctors the chosen candidate constructors
@@ -1348,12 +1435,15 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 	@SuppressWarnings("deprecation")  // for postProcessPropertyValues
 	protected void populateBean(String beanName, RootBeanDefinition mbd, @Nullable BeanWrapper bw) {
 		if (bw == null) {
+			//// 获取bean实例的属性值集合
 			if (mbd.hasPropertyValues()) {
+				// null对象，但是存在填充的属性，不合理
 				throw new BeanCreationException(
 						mbd.getResourceDescription(), beanName, "Cannot apply property values to null instance");
 			}
 			else {
 				// Skip property population phase for null instance.
+				// null 对象，且没有属性可以填充，直接返回
 				return;
 			}
 		}
@@ -1361,10 +1451,12 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 		// Give any InstantiationAwareBeanPostProcessors the opportunity to modify the
 		// state of the bean before properties are set. This can be used, for example,
 		// to support styles of field injection.
+		// 给InstantiationAwareBeanPostProcessors最后一次机会在注入属性前改变bean实例
 		if (!mbd.isSynthetic() && hasInstantiationAwareBeanPostProcessors()) {
 			for (BeanPostProcessor bp : getBeanPostProcessors()) {
 				if (bp instanceof InstantiationAwareBeanPostProcessor) {
 					InstantiationAwareBeanPostProcessor ibp = (InstantiationAwareBeanPostProcessor) bp;
+					// 是否继续填充bean
 					if (!ibp.postProcessAfterInstantiation(bw.getWrappedInstance(), beanName)) {
 						return;
 					}
@@ -1378,10 +1470,12 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 		if (resolvedAutowireMode == AUTOWIRE_BY_NAME || resolvedAutowireMode == AUTOWIRE_BY_TYPE) {
 			MutablePropertyValues newPvs = new MutablePropertyValues(pvs);
 			// Add property values based on autowire by name if applicable.
+			// 根据名称自动注入
 			if (resolvedAutowireMode == AUTOWIRE_BY_NAME) {
 				autowireByName(beanName, mbd, bw, newPvs);
 			}
 			// Add property values based on autowire by type if applicable.
+			// 根据类型自动注入
 			if (resolvedAutowireMode == AUTOWIRE_BY_TYPE) {
 				autowireByType(beanName, mbd, bw, newPvs);
 			}
@@ -1392,20 +1486,24 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 		boolean needsDepCheck = (mbd.getDependencyCheck() != AbstractBeanDefinition.DEPENDENCY_CHECK_NONE);
 
 		PropertyDescriptor[] filteredPds = null;
+		// 在属性注入前应用实例化后置处理器
 		if (hasInstAwareBpps) {
 			if (pvs == null) {
 				pvs = mbd.getPropertyValues();
 			}
 			for (BeanPostProcessor bp : getBeanPostProcessors()) {
 				if (bp instanceof InstantiationAwareBeanPostProcessor) {
+					//@Autowired和@resouce
 					InstantiationAwareBeanPostProcessor ibp = (InstantiationAwareBeanPostProcessor) bp;
 					PropertyValues pvsToUse = ibp.postProcessProperties(pvs, bw.getWrappedInstance(), beanName);
 					if (pvsToUse == null) {
 						if (filteredPds == null) {
 							filteredPds = filterPropertyDescriptorsForDependencyCheck(bw, mbd.allowCaching);
 						}
+						// 调用后置处理器的postProcessPropertyValues方法，表示此时正在构造
 						pvsToUse = ibp.postProcessPropertyValues(pvs, filteredPds, bw.getWrappedInstance(), beanName);
 						if (pvsToUse == null) {
+							// 处理器中把属性值处理没了，则继续执行属性注入已经没有意义
 							return;
 						}
 					}
@@ -1413,6 +1511,7 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 				}
 			}
 		}
+		// 依赖检查，对应depends-on属性，该属性已经弃用
 		if (needsDepCheck) {
 			if (filteredPds == null) {
 				filteredPds = filterPropertyDescriptorsForDependencyCheck(bw, mbd.allowCaching);
@@ -1420,7 +1519,9 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 			checkDependencies(beanName, mbd, filteredPds, pvs);
 		}
 
+		// 执行属性注入
 		if (pvs != null) {
+			//调用set方法
 			applyPropertyValues(beanName, mbd, bw, pvs);
 		}
 	}
@@ -1437,11 +1538,15 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 	protected void autowireByName(
 			String beanName, AbstractBeanDefinition mbd, BeanWrapper bw, MutablePropertyValues pvs) {
 
+		// 寻找需要注入的属性
 		String[] propertyNames = unsatisfiedNonSimpleProperties(mbd, bw);
 		for (String propertyName : propertyNames) {
 			if (containsBean(propertyName)) {
+				// 如果依赖的bean没有初始化，则递归初始化相关的bean
 				Object bean = getBean(propertyName);
+				// 添加到属性集合中
 				pvs.add(propertyName, bean);
+				// 记录依赖关系到集合中
 				registerDependentBean(propertyName, beanName);
 				if (logger.isTraceEnabled()) {
 					logger.trace("Added autowiring by name from bean name '" + beanName +
@@ -1476,6 +1581,7 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 			converter = bw;
 		}
 
+		// 寻找需要注入的属性
 		Set<String> autowiredBeanNames = new LinkedHashSet<>(4);
 		String[] propertyNames = unsatisfiedNonSimpleProperties(mbd, bw);
 		for (String propertyName : propertyNames) {
@@ -1484,10 +1590,19 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 				// Don't try autowiring by type for type Object: never makes sense,
 				// even if it technically is a unsatisfied, non-simple property.
 				if (Object.class != pd.getPropertyType()) {
+					// 获取指定属性的set方法
 					MethodParameter methodParam = BeanUtils.getWriteMethodParameter(pd);
 					// Do not allow eager init for type matching in case of a prioritized post-processor.
 					boolean eager = !(bw.getWrappedInstance() instanceof PriorityOrdered);
 					DependencyDescriptor desc = new AutowireByTypeDependencyDescriptor(methodParam, eager);
+					/*
+					 * 解析指定beanName的属性所匹配的值，并把解析到的属性存储在autowiredBeanNames中，当属性存在多个封装的bean时，比如：
+					 *
+					 * @Autowired
+					 * private List<A> list
+					 *
+					 * 将会找到所有匹配A类型的bean，并将其注入
+					 */
 					Object autowiredArgument = resolveDependency(desc, beanName, autowiredBeanNames, converter);
 					if (autowiredArgument != null) {
 						pvs.add(propertyName, autowiredArgument);
@@ -1638,6 +1753,7 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 			mpvs = (MutablePropertyValues) pvs;
 			if (mpvs.isConverted()) {
 				// Shortcut: use the pre-converted values as-is.
+				// 之前已经被转换为对应的类型，那么可以直接设置到beanWrapper
 				try {
 					bw.setPropertyValues(mpvs);
 					return;
@@ -1647,9 +1763,11 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 							mbd.getResourceDescription(), beanName, "Error setting property values", ex);
 				}
 			}
+			// 未被转换，记录到original进行转换
 			original = mpvs.getPropertyValueList();
 		}
 		else {
+			// 否则，使用原始的属性获取方法
 			original = Arrays.asList(pvs.getPropertyValues());
 		}
 
@@ -1657,16 +1775,19 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 		if (converter == null) {
 			converter = bw;
 		}
+		// 获取对应的解析器
 		BeanDefinitionValueResolver valueResolver = new BeanDefinitionValueResolver(this, beanName, mbd, converter);
 
 		// Create a deep copy, resolving any references for values.
 		List<PropertyValue> deepCopy = new ArrayList<>(original.size());
 		boolean resolveNecessary = false;
+		// 遍历属性，将属性转换成对应类的属性类型
 		for (PropertyValue pv : original) {
 			if (pv.isConverted()) {
 				deepCopy.add(pv);
 			}
 			else {
+				// 执行类型转换
 				String propertyName = pv.getName();
 				Object originalValue = pv.getValue();
 				Object resolvedValue = valueResolver.resolveValueIfNecessary(pv, originalValue);
@@ -1674,11 +1795,13 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 				boolean convertible = bw.isWritableProperty(propertyName) &&
 						!PropertyAccessorUtils.isNestedOrIndexedProperty(propertyName);
 				if (convertible) {
+					// 转换
 					convertedValue = convertForProperty(resolvedValue, propertyName, bw, converter);
 				}
 				// Possibly store converted value in merged bean definition,
 				// in order to avoid re-conversion for every created bean instance.
 				if (resolvedValue == originalValue) {
+					// 转换后的value等于原始值
 					if (convertible) {
 						pv.setConvertedValue(convertedValue);
 					}
@@ -1687,21 +1810,25 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 				else if (convertible && originalValue instanceof TypedStringValue &&
 						!((TypedStringValue) originalValue).isDynamic() &&
 						!(convertedValue instanceof Collection || ObjectUtils.isArray(convertedValue))) {
+					// 转换后的类型是集合或数组
 					pv.setConvertedValue(convertedValue);
 					deepCopy.add(pv);
 				}
 				else {
+					// 未解析完全，标记需要解析
 					resolveNecessary = true;
 					deepCopy.add(new PropertyValue(pv, convertedValue));
 				}
 			}
 		}
 		if (mpvs != null && !resolveNecessary) {
+			// 标记为已全部转换
 			mpvs.setConverted();
 		}
 
 		// Set our (possibly massaged) deep copy.
 		try {
+			// 深拷贝
 			bw.setPropertyValues(new MutablePropertyValues(deepCopy));
 		}
 		catch (BeansException ex) {
@@ -1746,6 +1873,12 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 	 * @see #applyBeanPostProcessorsAfterInitialization
 	 */
 	protected Object initializeBean(String beanName, Object bean, @Nullable RootBeanDefinition mbd) {
+		//1、激活 bean 实现的 Aware 类：BeanNameAware, BeanClassLoaderAware, BeanFactoryAware
+		//2、应用 BeanPostProcessor 的 postProcessBeforeInitialization
+		//3、激活用户自定义的 init-method 方法，以及常用的 afterPropertiesSet 方法
+		//4、应用 BeanPostProcessor 的 postProcessAfterInitialization
+
+		// 1. 激活bean实现的Aware类：BeanNameAware, BeanClassLoaderAware, BeanFactoryAware
 		if (System.getSecurityManager() != null) {
 			AccessController.doPrivileged((PrivilegedAction<Object>) () -> {
 				invokeAwareMethods(beanName, bean);
@@ -1753,14 +1886,17 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 			}, getAccessControlContext());
 		}
 		else {
+			//回调执行
 			invokeAwareMethods(beanName, bean);
 		}
 
+		// 2. 应用 BeanPostProcessor 的 postProcessBeforeInitialization
 		Object wrappedBean = bean;
 		if (mbd == null || !mbd.isSynthetic()) {
 			wrappedBean = applyBeanPostProcessorsBeforeInitialization(wrappedBean, beanName);
 		}
 
+		// 3. 激活用户自定义的 init-method 方法，以及常用的 afterPropertiesSet 方法
 		try {
 			invokeInitMethods(beanName, wrappedBean, mbd);
 		}
@@ -1769,6 +1905,7 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 					(mbd != null ? mbd.getResourceDescription() : null),
 					beanName, "Invocation of init method failed", ex);
 		}
+		// 4. 应用 BeanPostProcessor 的 postProcessAfterInitialization
 		if (mbd == null || !mbd.isSynthetic()) {
 			wrappedBean = applyBeanPostProcessorsAfterInitialization(wrappedBean, beanName);
 		}
