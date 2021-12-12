@@ -5,6 +5,7 @@ import com.ljh.test.pojo.Student;
 import com.ljh.test.service.IndexService;
 import com.ljh.test.service.UserService;
 import com.ljh.test.service.UserServiceImpl;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
@@ -33,20 +34,20 @@ public class Init {
 //		UserServiceImpl bean = context.getBean(UserServiceImpl.class);
 //		bean.sayHi();
 
-		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("beanFactory.xml");
-		Person person = context.getBean(Person.class);
-		System.out.println(person.toString());
+//		ClassPathXmlApplicationContext context1 = new ClassPathXmlApplicationContext("beanFactory.xml");
+//		Person person = context1.getBean(Person.class);
+//		System.out.println(person.toString());
 //		Student student = classPathXmlApplicationContext.getBeanFactory().getBean(Student.class);
 //		Student student = classPathXmlApplicationContext.getBean(Student.class);
 //		System.out.println(student.toString());
 
 
-//		AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(Init.class);
+		AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(Init.class);
 		//获取bean并且打印bean,spring默认是支持循环依赖的
 		//使用api关闭循环依赖支持,写在后面没有用，要手动refresh方法之前set
-//		context.setAllowCircularReferences(true);
+		context.setAllowCircularReferences(true);
 
-//		UserService bean = context.getBean(UserService.class);
+		UserService bean = context.getBean(UserService.class);
 //		IndexService indexService = context.getBean(IndexService.class);
 //		UserService userService = indexService.getUserService();
 //		IndexService indexService2 = userService.getIndexService();

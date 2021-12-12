@@ -55,6 +55,9 @@ public class AnnotationConfigApplicationContext extends GenericApplicationContex
 
 	private final AnnotatedBeanDefinitionReader reader;
 
+	/**
+	 * 类路径下的bean定义扫描器
+	 */
 	private final ClassPathBeanDefinitionScanner scanner;
 
 
@@ -63,7 +66,9 @@ public class AnnotationConfigApplicationContext extends GenericApplicationContex
 	 * through {@link #register} calls and then manually {@linkplain #refresh refreshed}.
 	 */
 	public AnnotationConfigApplicationContext() {
+		//创建一个读取注解的bean定义读取器，完成了spring内部BeanDefinition的注册
 		this.reader = new AnnotatedBeanDefinitionReader(this);
+		//创建BeanDefinition扫描器可以用来扫描包或者类
 		this.scanner = new ClassPathBeanDefinitionScanner(this);
 	}
 
@@ -85,10 +90,13 @@ public class AnnotationConfigApplicationContext extends GenericApplicationContex
 	 * {@link Configuration @Configuration} classes
 	 */
 	public AnnotationConfigApplicationContext(Class<?>... componentClasses) {
+		//调用构造函数
 		this();
 		//修改源码关闭循环依赖AnnotationConfigApplicationContext继承的GenericApplicationContext的setAllowCircularReferences
 //		setAllowCircularReferences(false);
+		//注册配置类
 		register(componentClasses);
+		//刷新
 		refresh();
 	}
 
